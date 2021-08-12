@@ -13,6 +13,7 @@ const MAX_COLS: &str = "MAX_COLS";
 const OUTPUT: &str = "OUTPUT";
 const INPUT_PATH: &str = "INPUT_PATH";
 const FORCE_OUTPUT_OVERRIDE: &str = "FORCE_OUTPUT_OVERRIDE";
+const IGNORE_IMAGES: &str = "IGNORE";
 
 fn main() {
 
@@ -37,8 +38,14 @@ fn main() {
         .long(OUTPUT)
         .help("Output file name")
       )
+      .arg(Arg::with_name(IGNORE_IMAGES)
+        .value_name("PATH PATH2")
+        .short("i")
+        .long(IGNORE_IMAGES)
+        .multiple(true)
+        .help("Images to be ignored")
+      )
       .arg(Arg::with_name(FORCE_OUTPUT_OVERRIDE)
-        .empty_values(true)
         .alias("f")
         .short("f")
         .help("Forces output override")
@@ -57,15 +64,21 @@ fn main() {
   let mut col = 0;
   let mut line = 0;  
   let mut files: Vec<String> = vec![];
-  let mut tile_width = 0u32;
-  let mut tile_height = 0u32;
+  let mut tile_w = 0u32;
+  let mut tile_h = 0u32;
+
+  let mut ignored_images: Vec<String> = Vec::new();
+
+  if let Some(ignored_images_res) = matches.values_of(IGNORE_IMAGES) {
+    ignored_images = ignored_images_res.into_iter().map(|a| a.to_string()).collect();
+  }
   
   for entry in WalkDir::new(input) {
     match entry {
       Ok(entry) => {
         if entry.file_type().is_dir() { continue; }
-        let f_name = entry.file_name().to_os_string().into_string().unwrap();
-        if !f_name.ends_with(".png") && !f_name.ends_with(".bmp") && !f_name.ends_with(".jpeg") {
+        let filename = entry.file_name().to_os_string().into_string().unwrap();
+        if !filename.ends_with(".png") && !filename.ends_with(".bmp") && !filename.ends_with(".jpeg") {
           continue;
         }
         let file = entry.path().to_str().unwrap().to_string();
@@ -73,13 +86,16 @@ fn main() {
         let img_w = img.width();
         let img_h = img.height();
 
-        if img_w > tile_width {
-          tile_width = img_w;
+        if img_w > tile_w {
+          tile_w = img_w;
         }
-        if img_h > tile_height {
-          tile_height = img_h;
+        if img_h > tile_h {
+          tile_h = img_h;
         }
-        files.push(file);
+        
+        if !ignored_images.contains(&file) {
+          files.push(file);
+        }
       },
       Err(e) => panic!("Error found {}", e),
     }
@@ -93,7 +109,7 @@ fn main() {
     }
   };
 
-  let mut big_img = DynamicImage::new_rgba8(tile_width * max_cols, tile_height * max_lines);
+  let mut big_img = DynamicImage::new_rgba8(tile_w * max_cols, tile_h * max_lines);
 
   for file in files.iter() {
     let img = image::open(file).unwrap();
@@ -101,7 +117,7 @@ fn main() {
       col = 0;
       line += 1;
     }
-    let mut subimg = image::imageops::crop(&mut big_img, tile_width * col, line * tile_height, tile_width, tile_height);
+    let mut subimg = image::imageops::crop(&mut big_img, tile_w * col, line * tile_h, tile_w, tile_h);
     subimg.copy_from(&img, 0, 0).unwrap();
     col += 1;
   }
