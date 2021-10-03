@@ -15,9 +15,16 @@ const INPUT_PATH: &str = "INPUT_PATH";
 const FORCE_OUTPUT_OVERRIDE: &str = "FORCE_OUTPUT_OVERRIDE";
 const IGNORE_IMAGES: &str = "IGNORE";
 
-fn main() {
+struct ArgHanle {
+  max_cols: u32,
+  output: String,
+  input: String,
+  ignored_images: Vec<String>,
+}
 
-  let matches = App::new(env!("CARGO_PKG_NAME"))
+impl ArgHanle{
+  fn new() -> Self {
+    let matches = App::new(env!("CARGO_PKG_NAME"))
     .author(env!("CARGO_PKG_AUTHORS"))
     .version(env!("CARGO_PKG_VERSION"))
     .about("Bundles all images in a folder into a single image. The size of the largest image will be used for tile size")
@@ -52,11 +59,32 @@ fn main() {
       )
     .get_matches();
 
-  let max_cols = get_max_cols(&matches);
-  let output = get_output(&matches);
-  let input = matches.value_of(INPUT_PATH).unwrap();
+    let max_cols = get_max_cols(&matches);
+    let input = matches.value_of(INPUT_PATH).unwrap().to_string();
+    let force_output_override = matches.occurrences_of(FORCE_OUTPUT_OVERRIDE) > 0;
+    let output = get_output(&matches, force_output_override);
+    
+    let mut ignored_images: Vec<String> = Vec::new();
 
-  if !Path::new(input).exists() {
+    if let Some(ignored_images_res) = matches.values_of(IGNORE_IMAGES) {
+      ignored_images = ignored_images_res.into_iter().map(|a| a.to_string()).collect();
+    }
+    
+    Self {
+      max_cols,
+      output,
+      input,
+      ignored_images,
+    }
+  }
+}
+
+
+
+fn main() {
+  let ArgHanle { max_cols, output, input, ignored_images } = ArgHanle::new();
+
+  if !Path::new(&input).exists() {
     println!("Path <{}> doesn't exists", input);
     process::exit(1);
   }
@@ -66,12 +94,6 @@ fn main() {
   let mut files: Vec<String> = vec![];
   let mut tile_w = 0u32;
   let mut tile_h = 0u32;
-
-  let mut ignored_images: Vec<String> = Vec::new();
-
-  if let Some(ignored_images_res) = matches.values_of(IGNORE_IMAGES) {
-    ignored_images = ignored_images_res.into_iter().map(|a| a.to_string()).collect();
-  }
   
   for entry in WalkDir::new(input) {
     match entry {
@@ -124,9 +146,8 @@ fn main() {
   big_img.save(output).unwrap();
 }
 
-fn get_output(matches: &ArgMatches) -> String {
+fn get_output(matches: &ArgMatches, forced: bool) -> String {
   let output = matches.value_of(OUTPUT).unwrap_or("spritesheet_out.png").to_string();
-  let forced = matches.occurrences_of(FORCE_OUTPUT_OVERRIDE) > 0;
 
   if Path::new(&output).exists() && !forced {
     println!("Output <{}> alread exists. Use -f flag to force output override", output);
@@ -135,7 +156,9 @@ fn get_output(matches: &ArgMatches) -> String {
   output
 }
 
+
 fn get_max_cols(matches: &ArgMatches) -> u32 {
+  // If number of columns were less then MAX_COLs default value use actualy columns count instead
   let max_col_str = matches.value_of(MAX_COLS).unwrap_or("10");  
   match max_col_str.parse::<u32>() {
     Ok(v) => {
